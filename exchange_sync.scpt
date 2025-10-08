@@ -45,10 +45,11 @@ tell application "Calendar"
 		
 		set syncCount to 0
 		repeat with e in sourceEvents
-			-- Nur Events berücksichtigen, die nach dem letzten Sync geändert oder erstellt wurden
+			-- Only consider events that were changed or created after the last sync
 			set modDate to my safeRead(e, "modification date")
 			if modDate is not missing value and modDate > lastSyncDate then
-				set eventSummary to my safeRead(e, "summary")
+				-- ‼️ Only uncomment when event summaries NEVER contain critical data
+				--	set eventSummary to my safeRead(e, "summary")
 				set eventStart to my safeRead(e, "start date")
 				set eventEnd to my safeRead(e, "end date")
 				set eventLocation to my safeRead(e, "location")
