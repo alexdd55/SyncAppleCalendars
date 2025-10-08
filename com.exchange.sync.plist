@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.exchange.sync</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>osascript</string>
+        <string>/Users/<USERNAME>/Library/Scripts/exchange_sync.scpt</string>
+    </array>
+
+    <key>StartInterval</key>
+    <integer>7200</integer> <!-- every 2 hours -->
+
+    <key>RunAtLoad</key>
+    <true/>
+</dict>
+</plist>
