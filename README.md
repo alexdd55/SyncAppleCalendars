@@ -1,8 +1,10 @@
-# 🗓️ Exchange → Apple Calendar Sync (macOS AppleScript)
+# 🗓️ Apple Calender Exchange → iCloud Calendar Sync (macOS AppleScript)
 
-An AppleScript that automatically synchronizes your Exchange calendar with an Apple calendar.
+An AppleScript that automatically synchronizes your Exchange calendar - configured in Apple Calendar - with an iCould calendar.
 
-It only copies new or changed appointments (delta sync), covers the last 90 days and the next 30 days, and optionally maintains a log in the Documents folder.
+It only copies new or changed appointments (delta sync), covers the last n days and the next 30 days, and optionally maintains a log in the Documents folder.
+
+I created this to meet company requirements, to NOT log in to exchange from non-company devices. 
 
 ---
 
