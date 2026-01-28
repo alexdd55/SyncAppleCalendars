@@ -84,12 +84,7 @@ try
 					set location of tEvent to srcLocation
 					set updateCount to updateCount + 1
 				else
-					make new event at end of events of targetCal with properties ¬
-						¬
-							¬
-								¬
-									{summary:srcSummary, start date:srcStart, end date:srcEnd, location:srcLocation, notes:marker} ¬
-										
+					make new event at end of events of targetCal with properties {summary:srcSummary, start date:srcStart, end date:srcEnd, location:srcLocation, notes:marker}
 					set newCount to newCount + 1
 				end if
 			end if
@@ -107,11 +102,17 @@ try
 				if tNotes contains "[EXCHANGE_UID=" then
 					
 					-- ✅ SAFE UID EXTRACTION
-					set AppleScript's text item delimiters to "[EXCHANGE_UID="
-					set parts to text items of tNotes
-					set AppleScript's text item delimiters to "]"
-					set tUID to item 1 of text items of (item 2 of parts)
-					set AppleScript's text item delimiters to ""
+					set oldDelimiters to AppleScript's text item delimiters
+					try
+						set AppleScript's text item delimiters to "[EXCHANGE_UID="
+						set parts to text items of tNotes
+						set AppleScript's text item delimiters to "]"
+						set tUID to item 1 of text items of (item 2 of parts)
+						set AppleScript's text item delimiters to oldDelimiters
+					on error errMsg number errNum
+						set AppleScript's text item delimiters to oldDelimiters
+						error errMsg number errNum
+					end try
 					
 					set tStart to start date of tEvent
 					if tStart ≥ startDate and tStart ≤ endDate then
