@@ -9,7 +9,6 @@ UID-based · Delta · Update · Delete
 
 set sourceCalendarName to "Exchange Calendar"
 set targetCalendarName to "iCloud Calendar"
-
 set daysBack to 10
 set daysAhead to 30
 
@@ -53,42 +52,59 @@ try
 		
 		set sourceEvents to every event of sourceCal ¬
 			whose start date ≥ startDate ¬
-			and start date ≤ endDate ¬
-			and modification date > lastSyncDate
+			and start date ≤ endDate
 		
 		repeat with e in sourceEvents
 			
-			if recurrence of e is not missing value then
-				-- skip recurring
+			set srcUID to uid of e
+			if srcUID is missing value then next
+			
+			set end of exchangeUIDs to srcUID
+			set marker to "[EXCHANGE_UID=" & srcUID & "]"
+			
+			set srcSummary to my safeText(summary of e)
+			set srcStart to start date of e
+			set srcEnd to end date of e
+			set srcLocation to my safeText(location of e)
+			set srcRecurrence to recurrence of e -- kann missing value sein (Einzeltermin)
+			
+			if srcSummary is "" or srcStart is missing value then next
+			
+			set matches to (every event of targetCal whose description contains marker)
+			
+			if (count of matches) > 0 then
+				set tEvent to item 1 of matches
+				
+				set summary of tEvent to srcSummary
+				set start date of tEvent to srcStart
+				set end date of tEvent to srcEnd
+				set location of tEvent to srcLocation
+				
+				-- Serienregel spiegeln (oder entfernen, falls Quelle keine Serie mehr ist)
+				try
+					if srcRecurrence is missing value then
+						set recurrence of tEvent to missing value
+					else
+						set recurrence of tEvent to srcRecurrence
+					end if
+				end try
+				
+				set updateCount to updateCount + 1
 			else
-				set srcUID to uid of e
-				if srcUID is missing value then next
-				
-				set end of exchangeUIDs to srcUID
-				set marker to "[EXCHANGE_UID=" & srcUID & "]"
-				
-				set srcSummary to my safeText(summary of e)
-				set srcStart to start date of e
-				set srcEnd to end date of e
-				set srcLocation to my safeText(location of e)
-				
-				if srcSummary is "" or srcStart is missing value then next
-				
-				set matches to (every event of targetCal whose notes contains marker)
-				
-				if (count of matches) > 0 then
-					set tEvent to item 1 of matches
-					set summary of tEvent to srcSummary
-					set start date of tEvent to srcStart
-					set end date of tEvent to srcEnd
-					set location of tEvent to srcLocation
-					set updateCount to updateCount + 1
+				-- Neu anlegen: wenn Serie, dann mit recurrence
+				if srcRecurrence is missing value then
+					make new event at end of events of targetCal with properties ¬
+						{summary:srcSummary, start date:srcStart, end date:srcEnd, location:srcLocation, description:marker}
 				else
-					make new event at end of events of targetCal with properties {summary:srcSummary, start date:srcStart, end date:srcEnd, location:srcLocation, notes:marker}
-					set newCount to newCount + 1
+					make new event at end of events of targetCal with properties ¬
+						{summary:srcSummary, start date:srcStart, end date:srcEnd, location:srcLocation, description:marker, recurrence:srcRecurrence}
 				end if
+				
+				set newCount to newCount + 1
 			end if
+			
 		end repeat
+		
 	end tell
 	
 	------------------------------------------------------------
@@ -133,11 +149,13 @@ try
 	set isoDate to do shell script "date -u '+%Y-%m-%dT%H:%M:%SZ'"
 	do shell script "echo " & quoted form of isoDate & " > " & quoted form of syncFile
 	
-	my appendToFile(my buildLogEntry(newCount & " created, " & updateCount & " updated, " & deleteCount & " deleted"), logFile)
+	set summaryText to (newCount as text) & " new, " & (updateCount as text) & " updated, " & (deleteCount as text) & " deleted"
+	set logText to (newCount as text) & " created, " & (updateCount as text) & " updated, " & (deleteCount as text) & " deleted"
 	
-	display notification ¬
-		(newCount & " new, " & updateCount & " updated, " & deleteCount & " deleted") ¬
-			with title "Exchange → Apple Calendar Sync"
+	my appendToFile(my buildLogEntry(logText), logFile)
+	
+	display notification summaryText with title "Exchange → Apple Calendar Sync"
+	
 	
 on error errMsg number errNum
 	my appendToFile(my buildLogEntry("ERROR (" & errNum & "): " & errMsg), logFile)
