@@ -10,12 +10,12 @@ I created this to meet company requirements, to NOT log in to exchange from non-
 
 ## ✨ Features
 
-- 🔄 **Delta synchronization** – copies only new or changed appointments
-- 🕓 **Time window**: 90 days backward, 30 days forward
+- 🧠 UID-Sync + Update + Delete
+- 🕓 **Time window**: 10 days backward, 30 days forward
 - 📁 **Local storage** of the sync status in `~/Documents/ExchangeSync/lastSync.txt`
 - 🪵 **Log file** with timestamp and results in `~/Documents/ExchangeSync/sync.log`
 - 🚀 **Automatic background run** via `launchd` (optional)
-- ✅ Completely **offline & local** – no cloud or third-party provider
+
 
 ---
 
