@@ -1,200 +1,186 @@
 (*
-Exchange → Apple Calendar Synchronization (Delta + 90/30 days)
-Copies only new or modified events since the last run.
-Stores sync timestamp + log file in ~/Documents/ExchangeSync/
+Exchange → Apple Calendar Sync
+UID-based · Delta · Update · Delete
 *)
 
--- 🗓️ Calendar names (adjust as needed)
-set sourceCalendarName to "Exchange"
-set targetCalendarName to "MyCalender"
+------------------------------------------------------------
+-- CONFIG
+------------------------------------------------------------
 
--- 📅 Time range: X days back, Y days ahead
-set daysBack to 5
-set daysAhead to 35
+set sourceCalendarName to "Exchange Calendar"
+set targetCalendarName to "iCloud Calendar"
 
--- 📁 File paths in user's Documents folder
+set daysBack to 10
+set daysAhead to 30
+
 set docsPath to (POSIX path of (path to documents folder))
 set syncDir to docsPath & "ExchangeSync/"
 set syncFile to syncDir & "lastSync.txt"
 set logFile to syncDir & "sync.log"
 
--- Ensure sync directory exists
 do shell script "mkdir -p " & quoted form of syncDir
 
--- 🕐 Load last sync date (or use default = 90 days ago)
+------------------------------------------------------------
+-- LOAD LAST SYNC
+------------------------------------------------------------
+
 set lastSyncDate to (current date) - (daysBack * days)
 try
-	set lastSyncDateString to do shell script "cat " & quoted form of syncFile
-	if lastSyncDateString is not "" then set lastSyncDate to my parseISODate(lastSyncDateString)
-on error
-	set lastSyncDate to (current date) - (daysBack * days)
+	set lastSyncDate to my parseISODate(do shell script "cat " & quoted form of syncFile)
 end try
 
--- 🕑 Define sync window
 set nowDate to current date
 set startDate to nowDate - (daysBack * days)
 set endDate to nowDate + (daysAhead * days)
 
--- Counter for new events
-set syncCount to 0
+------------------------------------------------------------
+-- STATE
+------------------------------------------------------------
+
+set newCount to 0
+set updateCount to 0
+set deleteCount to 0
+set exchangeUIDs to {}
+
+------------------------------------------------------------
+-- MAIN SYNC
+------------------------------------------------------------
 
 try
-	-- All Calendar-related commands must be inside this block
 	tell application "Calendar"
 		set sourceCal to calendar sourceCalendarName
 		set targetCal to calendar targetCalendarName
 		
-		-- Fetch all events within the time range
-		set sourceEvents to every event of sourceCal whose start date ≥ startDate and start date ≤ endDate
+		set sourceEvents to every event of sourceCal ¬
+			whose start date ≥ startDate ¬
+			and start date ≤ endDate ¬
+			and modification date > lastSyncDate
 		
 		repeat with e in sourceEvents
-			-- Safely read modification date (handles Exchange exceptions)
-			set modDate to my safeRead(e, "modification date")
 			
-			-- Only process events modified after last sync
-			if (modDate is not missing value) and (class of modDate is date) and (modDate > lastSyncDate) then
-				-- Read and sanitize event properties
-				set eventSummary to my safeText(my safeRead(e, "summary"))
-				set eventStart to my safeRead(e, "start date")
-				set eventEnd to my safeRead(e, "end date")
-				set eventLocation to my safeText(my safeRead(e, "location"))
-				set eventRecurrence to my safeRead(e, "recurrence")
+			if recurrence of e is not missing value then
+				-- skip recurring
+			else
+				set srcUID to uid of e
+				if srcUID is missing value then next
 				
-				-- Ensure event has required data
-				if eventStart is not missing value and eventSummary is not "" then
-					set existingEvents to (every event of targetCal whose start date = eventStart and end date = eventEnd and summary = eventSummary)
-					
-					-- Create event only if it doesn't exist yet
-					if (count of existingEvents) = 0 then
-						try
-							if eventRecurrence is not missing value and (count of eventRecurrence) > 0 then
-								make new event at end of events of targetCal with properties {summary:eventSummary, start date:eventStart, end date:eventEnd, location:eventLocation, recurrence:eventRecurrence}
-							else
-								make new event at end of events of targetCal with properties {summary:eventSummary, start date:eventStart, end date:eventEnd, location:eventLocation}
-							end if
-							set syncCount to syncCount + 1
-						on error innerErrMsg number innerErrNum
-							my appendToFile(my buildLogEntry("Inner error (" & innerErrNum & "): " & innerErrMsg), logFile)
-						end try
-					end if
+				set end of exchangeUIDs to srcUID
+				set marker to "[EXCHANGE_UID=" & srcUID & "]"
+				
+				set srcSummary to my safeText(summary of e)
+				set srcStart to start date of e
+				set srcEnd to end date of e
+				set srcLocation to my safeText(location of e)
+				
+				if srcSummary is "" or srcStart is missing value then next
+				
+				set matches to (every event of targetCal whose notes contains marker)
+				
+				if (count of matches) > 0 then
+					set tEvent to item 1 of matches
+					set summary of tEvent to srcSummary
+					set start date of tEvent to srcStart
+					set end date of tEvent to srcEnd
+					set location of tEvent to srcLocation
+					set updateCount to updateCount + 1
+				else
+					make new event at end of events of targetCal with properties ¬
+						¬
+							¬
+								¬
+									{summary:srcSummary, start date:srcStart, end date:srcEnd, location:srcLocation, notes:marker} ¬
+										
+					set newCount to newCount + 1
 				end if
 			end if
 		end repeat
 	end tell
 	
-	-- 🔄 Save current sync time in ISO format
+	------------------------------------------------------------
+	-- DELETE ORPHANED EVENTS
+	------------------------------------------------------------
+	
+	tell application "Calendar"
+		repeat with tEvent in every event of targetCal
+			try
+				set tNotes to notes of tEvent
+				if tNotes contains "[EXCHANGE_UID=" then
+					
+					-- ✅ SAFE UID EXTRACTION
+					set AppleScript's text item delimiters to "[EXCHANGE_UID="
+					set parts to text items of tNotes
+					set AppleScript's text item delimiters to "]"
+					set tUID to item 1 of text items of (item 2 of parts)
+					set AppleScript's text item delimiters to ""
+					
+					set tStart to start date of tEvent
+					if tStart ≥ startDate and tStart ≤ endDate then
+						if exchangeUIDs does not contain tUID then
+							delete tEvent
+							set deleteCount to deleteCount + 1
+						end if
+					end if
+				end if
+			end try
+		end repeat
+	end tell
+	
+	------------------------------------------------------------
+	-- SAVE STATE
+	------------------------------------------------------------
+	
 	set isoDate to do shell script "date -u '+%Y-%m-%dT%H:%M:%SZ'"
 	do shell script "echo " & quoted form of isoDate & " > " & quoted form of syncFile
 	
-	-- 🪵 Write sync summary to log
-	my appendToFile(my buildLogEntry((syncCount as text) & " new events synchronized"), logFile)
+	my appendToFile(my buildLogEntry(newCount & " created, " & updateCount & " updated, " & deleteCount & " deleted"), logFile)
 	
-	-- ✅ User notification
-	my notifySuccess(syncCount)
+	display notification ¬
+		(newCount & " new, " & updateCount & " updated, " & deleteCount & " deleted") ¬
+			with title "Exchange → Apple Calendar Sync"
 	
 on error errMsg number errNum
-	-- Handle outer-level errors (e.g., Calendar not available)
 	my appendToFile(my buildLogEntry("ERROR (" & errNum & "): " & errMsg), logFile)
-	my notifyError(errMsg, errNum)
+	display notification errMsg with title "Exchange Sync Error"
 end try
 
-
 ------------------------------------------------------------
--- 🧩 Utility functions
+-- UTILITIES
 ------------------------------------------------------------
 
--- Safe reading of Calendar event properties
-on safeRead(eventObj, propName)
-	tell application "Calendar"
-		try
-			if propName is "summary" then
-				return summary of eventObj
-			else if propName is "start date" then
-				return start date of eventObj
-			else if propName is "end date" then
-				return end date of eventObj
-			else if propName is "location" then
-				return location of eventObj
-			else if propName is "recurrence" then
-				try
-					return recurrence of eventObj
-				on error
-					return missing value
-				end try
-			else if propName is "modification date" then
-				try
-					set modDate to modification date of eventObj
-					if modDate is missing value then error "No modification date"
-					return modDate
-				on error
-					try
-						-- Fallback to start date if modification date is unavailable
-						set fallbackDate to start date of eventObj
-						if fallbackDate is missing value then set fallbackDate to ((current date) - (90 * days))
-						return fallbackDate
-					on error
-						return ((current date) - (90 * days))
-					end try
-				end try
-			else
-				return missing value
-			end if
-		on error
-			return missing value
-		end try
-	end tell
-end safeRead
-
--- Convert ISO-8601 string → AppleScript date
-on parseISODate(isoString)
+on parseISODate(iso)
 	try
-		set y to text 1 thru 4 of isoString
-		set m to text 6 thru 7 of isoString
-		set d to text 9 thru 10 of isoString
-		set hh to text 12 thru 13 of isoString
-		set mm to text 15 thru 16 of isoString
-		set ss to text 18 thru 19 of isoString
+		set y to text 1 thru 4 of iso
+		set m to text 6 thru 7 of iso
+		set d to text 9 thru 10 of iso
+		set hh to text 12 thru 13 of iso
+		set mm to text 15 thru 16 of iso
+		set ss to text 18 thru 19 of iso
 		
-		set theDate to (current date)
-		set year of theDate to y as integer
-		set month of theDate to m as integer
-		set day of theDate to d as integer
-		set time of theDate to ((hh as integer) * hours) + ((mm as integer) * minutes) + (ss as integer)
-		return theDate
+		set dt to current date
+		set year of dt to y as integer
+		set month of dt to m as integer
+		set day of dt to d as integer
+		set time of dt to (hh as integer) * hours + (mm as integer) * minutes + (ss as integer)
+		return dt
 	on error
-		return (current date)
+		return current date
 	end try
 end parseISODate
 
--- Convert safely any value to text
-on safeText(theValue)
-	if theValue is missing value then
+on safeText(v)
+	if v is missing value then return ""
+	try
+		return v as text
+	on error
 		return ""
-	else
-		try
-			return theValue as text
-		on error
-			return (theValue as string)
-		end try
-	end if
+	end try
 end safeText
 
--- Append a line to the log file
-on appendToFile(theText, thePath)
-	do shell script "echo " & quoted form of theText & " >> " & quoted form of thePath
+on appendToFile(t, p)
+	do shell script "echo " & quoted form of t & " >> " & quoted form of p
 end appendToFile
 
--- Build timestamped log entry
 on buildLogEntry(msg)
-	set timestamp to do shell script "date '+%Y-%m-%d %H:%M:%S'"
-	return timestamp & " | " & msg
+	set ts to do shell script "date '+%Y-%m-%d %H:%M:%S'"
+	return ts & " | " & msg
 end buildLogEntry
-
--- macOS user notifications
-on notifySuccess(syncCount)
-	display notification "Delta sync complete: " & syncCount & " new events copied ✅" with title "Exchange → Apple Calendar"
-end notifySuccess
-
-on notifyError(errMsg, errNum)
-	display notification "Error (" & errNum & "): " & errMsg with title "Exchange Sync Error"
-end notifyError
